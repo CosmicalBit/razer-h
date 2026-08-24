@@ -16,14 +16,24 @@ mod setulp;
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() == 1 {
-        create_config_if_missing();
-
-        let device = setulp::get_device();
-        if device.is_none() {
-            eprintln!("No supported Razer device found.");
+        if let Err(error) = create_config_if_missing() {
+            eprintln!("Failed to prepare the configuration file: {error}");
             return;
         }
-        let device = match device.unwrap().open() {
+
+        let device = match setulp::get_device() {
+            Ok(Some(device)) => device,
+            Ok(None) => {
+                eprintln!("No supported Razer device found.");
+                return;
+            }
+            Err(error) => {
+                eprintln!("Failed to enumerate USB devices: {error}");
+                return;
+            }
+        };
+
+        let device = match device.open() {
             Ok(device) => device,
             Err(error) => {
                 eprintln!("Failed to open the Razer device: {error}");
@@ -53,36 +63,37 @@ fn main() {
     }
 }
 
-fn create_config_if_missing() {
-    let home = env::var("HOME").expect("HOME is not set");
+fn create_config_if_missing() -> io::Result<()> {
+    let home = env::var_os("HOME").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "HOME environment variable is not set",
+        )
+    })?;
     let path = PathBuf::from(home).join(REST.trim_start_matches('/'));
 
     if path.exists() {
-        return;
+        return Ok(());
     }
 
     let mut poll_rate = String::new();
     print!("Polling rate: ");
-    io::stdout().flush().expect("couldn't flush stdout");
-    io::stdin()
-        .read_line(&mut poll_rate)
-        .expect("couldn't read polling rate");
+    io::stdout().flush()?;
+    io::stdin().read_line(&mut poll_rate)?;
 
     let mut dpi = String::new();
     print!("DPI: ");
-    io::stdout().flush().expect("couldn't flush stdout");
-    io::stdin().read_line(&mut dpi).expect("couldn't read DPI");
+    io::stdout().flush()?;
+    io::stdin().read_line(&mut dpi)?;
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).expect("couldn't create config directory");
+        fs::create_dir_all(parent)?;
     }
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .expect("couldn't create config file");
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
 
-    writeln!(file, "dpi={}", dpi.trim()).expect("couldn't write config file");
-    writeln!(file, "poll_rate={}", poll_rate.trim()).expect("couldn't write config file");
+    writeln!(file, "dpi={}", dpi.trim())?;
+    writeln!(file, "poll_rate={}", poll_rate.trim())?;
+
+    Ok(())
 }

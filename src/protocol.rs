@@ -160,7 +160,9 @@ mod tests {
         ];
 
         for (rate, expected_code) in cases {
-            let report = make_set_polling_report(rate, 0x01).unwrap();
+            let Some(report) = make_set_polling_report(rate, 0x01) else {
+                panic!("{rate} should build a report");
+            };
 
             assert_eq!(report.arguments[0], 0x01);
             assert_eq!(report.arguments[1], expected_code);
